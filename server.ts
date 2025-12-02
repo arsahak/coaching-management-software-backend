@@ -8,6 +8,7 @@ import connectDB from "./config/db";
 import admissionRoutes from "./routes/admission";
 import attendanceRoutes from "./routes/attendance";
 import authRoutes from "./routes/auth";
+import dashboardRoutes from "./routes/dashboard";
 import examRoutes from "./routes/exam";
 import feeRoutes from "./routes/fee";
 import portfolioRoutes from "./routes/portfolio";
@@ -60,6 +61,9 @@ app.get("/api/health", (_req: Request, res: Response) => {
 
 // Auth routes
 app.use("/api/auth", authRoutes);
+
+// Dashboard routes
+app.use("/api/dashboard", dashboardRoutes);
 
 // Admission routes
 app.use("/api/admission", admissionRoutes);
