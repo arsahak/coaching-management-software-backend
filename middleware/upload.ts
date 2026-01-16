@@ -3,21 +3,36 @@ import fs from "fs";
 import multer, { FileFilterCallback } from "multer";
 import path from "path";
 
+
 // Ensure uploads directory exists
-const uploadsDir = path.join(__dirname, "../../uploads");
+// Use /tmp for Vercel serverless environment, otherwise use local uploads
+const uploadsDir =
+  process.env.NODE_ENV === "production"
+    ? "/tmp/uploads"
+    : path.join(__dirname, "../../uploads");
 const tempDir = path.join(uploadsDir, "temp");
 
-if (!fs.existsSync(uploadsDir)) {
-  fs.mkdirSync(uploadsDir, { recursive: true });
-}
+// Helper function to ensure directory exists (with error handling)
+const ensureDir = (dir: string) => {
+  try {
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+  } catch (error) {
+    console.warn(`Could not create directory ${dir}:`, error);
+    // Continue execution - directory will be created on first upload attempt
+  }
+};
 
-if (!fs.existsSync(tempDir)) {
-  fs.mkdirSync(tempDir, { recursive: true });
-}
+// Try to create directories (non-blocking for serverless)
+ensureDir(uploadsDir);
+ensureDir(tempDir);
 
 // Configure storage
 const storage = multer.diskStorage({
   destination: (_req: Request, _file: any, cb: any) => {
+    // Ensure temp directory exists before each upload
+    ensureDir(tempDir);
     cb(null, tempDir);
   },
   filename: (_req: Request, file: any, cb: any) => {

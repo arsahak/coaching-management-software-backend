@@ -118,7 +118,6 @@ const admissionSchema = new Schema<IAdmission>(
       type: String,
       unique: true,
       sparse: true,
-      index: true,
     },
     status: {
       type: String,

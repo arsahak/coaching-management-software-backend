@@ -103,17 +103,14 @@ const smsSchema = new Schema<ISMS>(
     examId: {
       type: Schema.Types.ObjectId,
       ref: "Exam",
-      index: true,
     },
     feeId: {
       type: Schema.Types.ObjectId,
       ref: "Fee",
-      index: true,
     },
     admissionId: {
       type: Schema.Types.ObjectId,
       ref: "Admission",
-      index: true,
     },
     totalRecipients: {
       type: Number,
