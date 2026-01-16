@@ -35,7 +35,6 @@ export const createAdmission = async (
       !motherName ||
       !schoolName ||
       !fatherMobile ||
-      !studentClass ||
       !subjects ||
       !batchName ||
       !batchTime ||

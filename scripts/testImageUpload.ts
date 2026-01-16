@@ -24,7 +24,7 @@ const API_URL = process.env.API_URL || "http://localhost:5000";
 
 async function testImageUpload() {
   console.log("🧪 Testing Image Upload and WebP Conversion\n");
-  console.log("=" .repeat(50));
+  console.log("=".repeat(50));
 
   // Step 1: Login to get token
   console.log("\n📝 Step 1: Authenticating...");
@@ -46,7 +46,7 @@ async function testImageUpload() {
     return;
   }
 
-  const loginData = await loginResponse.json();
+  const loginData = (await loginResponse.json()) as any;
   const token = loginData.payload?.accessToken;
 
   if (!token) {
@@ -67,12 +67,19 @@ async function testImageUpload() {
     "base64"
   );
   
+  // Ensure directory exists
+  const tempDir = path.dirname(testImagePath);
+  if (!fs.existsSync(tempDir)) {
+    fs.mkdirSync(tempDir, { recursive: true });
+  }
+  
   fs.writeFileSync(testImagePath, pngData);
   console.log("✅ Test image created");
 
   // Step 3: Upload the image
   console.log("\n📝 Step 3: Uploading image to portfolio...");
 
+  // @ts-ignore
   const FormData = (await import("form-data")).default;
   const formData = new FormData();
   
@@ -86,7 +93,7 @@ async function testImageUpload() {
       Authorization: `Bearer ${token}`,
       ...formData.getHeaders(),
     },
-    body: formData,
+    body: formData as any,
   });
 
   if (!uploadResponse.ok) {
@@ -94,11 +101,13 @@ async function testImageUpload() {
     console.error(await uploadResponse.text());
     
     // Clean up test image
-    fs.unlinkSync(testImagePath);
+    if (fs.existsSync(testImagePath)) {
+      fs.unlinkSync(testImagePath);
+    }
     return;
   }
 
-  const uploadData = await uploadResponse.json();
+  const uploadData = (await uploadResponse.json()) as any;
   console.log("✅ Image uploaded successfully");
   console.log("\n📊 Response:");
   console.log(JSON.stringify(uploadData, null, 2));
@@ -124,7 +133,7 @@ async function testImageUpload() {
     console.error("❌ Failed to retrieve portfolio");
     console.error(await getResponse.text());
   } else {
-    const getData = await getResponse.json();
+    const getData = (await getResponse.json()) as any;
     console.log("✅ Portfolio retrieved successfully");
     console.log("\n📊 Current Portfolio:");
     console.log(`   Title: ${getData.data?.appTitle}`);
@@ -134,7 +143,9 @@ async function testImageUpload() {
 
   // Clean up test image
   try {
-    fs.unlinkSync(testImagePath);
+    if (fs.existsSync(testImagePath)) {
+      fs.unlinkSync(testImagePath);
+    }
     console.log("\n🧹 Test image cleaned up");
   } catch (error) {
     // Ignore cleanup errors

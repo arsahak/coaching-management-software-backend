@@ -11,7 +11,7 @@ export interface IAdmission extends Document {
   fatherMobile: string;
   motherMobile?: string;
   studentMobile?: string;
-  class: string; // Grade/Class
+  class?: string; // Grade/Class (optional, subjects array is primary)
   subjects: string[]; // Array of subjects
   batchName: string;
   batchTime: string; // Study time
@@ -77,7 +77,7 @@ const admissionSchema = new Schema<IAdmission>(
     },
     class: {
       type: String,
-      required: [true, "Class is required"],
+      required: false,
       trim: true,
     },
     subjects: {
