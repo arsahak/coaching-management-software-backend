@@ -39,7 +39,8 @@ export const createAdmission = async (
       !batchName ||
       !batchTime ||
       !admissionDate ||
-      monthlyFee === undefined
+      monthlyFee === undefined ||
+      !studentClass
     ) {
       res.status(400).json({
         success: false,
@@ -372,6 +373,40 @@ export const getAdmissionStats = async (
     res.status(500).json({
       success: false,
       message: "Error fetching admission statistics",
+      error: error instanceof Error ? error.message : "Unknown error",
+    });
+  }
+};
+
+// Get unique class list
+export const getClassList = async (
+  _req: Request,
+  res: Response
+): Promise<void> => {
+  try {
+    const classes = await Admission.distinct("class");
+    
+    // Sort classes in a logical order (numbers first, then alphabetically)
+    const sortedClasses = classes.sort((a, b) => {
+      // Extract numbers if present
+      const numA = parseInt(a.match(/\d+/)?.[0] || "999");
+      const numB = parseInt(b.match(/\d+/)?.[0] || "999");
+      
+      if (numA !== numB) {
+        return numA - numB;
+      }
+      return a.localeCompare(b);
+    });
+
+    res.status(200).json({
+      success: true,
+      data: sortedClasses,
+    });
+  } catch (error) {
+    console.error("Get class list error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error fetching class list",
       error: error instanceof Error ? error.message : "Unknown error",
     });
   }

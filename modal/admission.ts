@@ -2,6 +2,18 @@ import mongoose, { Document, Model, Schema } from "mongoose";
 
 type AdmissionStatus = "active" | "inactive" | "completed";
 
+// Predefined class/grade list for Bangladesh education system
+export const PREDEFINED_CLASSES = [
+  "Class 5",
+  "Class 6",
+  "Class 7",
+  "Class 8",
+  "Class 9",
+  "Class 10",
+  "Class 11",
+  "Class 12",
+] as const;
+
 export interface IAdmission extends Document {
   // Student Information
   studentName: string;
@@ -11,7 +23,7 @@ export interface IAdmission extends Document {
   fatherMobile: string;
   motherMobile?: string;
   studentMobile?: string;
-  class?: string; // Grade/Class (optional, subjects array is primary)
+  class: string; // Grade/Class (required)
   subjects: string[]; // Array of subjects
   batchName: string;
   batchTime: string; // Study time
@@ -77,7 +89,7 @@ const admissionSchema = new Schema<IAdmission>(
     },
     class: {
       type: String,
-      required: false,
+      required: [true, "Class/Grade is required"],
       trim: true,
     },
     subjects: {
