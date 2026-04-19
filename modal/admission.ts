@@ -1,4 +1,5 @@
-import mongoose, { Document, Model, Schema } from "mongoose";
+import mongoose, { Document, Schema } from "mongoose";
+import { getNextSequence } from "./counter";
 
 type AdmissionStatus = "active" | "inactive" | "completed";
 
@@ -172,39 +173,18 @@ admissionSchema.pre<IAdmission>("save", async function (next) {
   try {
     // Only generate if it's missing
     if (!this.studentId) {
-      // Generate student ID: ADM-YYYY-MMDD-XXXX (e.g., ADM-2025-0101-0001)
+      // Generate student ID: ADM-YYYY-MMDD-XXXX (e.g., ADM-2026-0205-0001)
       const now = new Date();
       const year = now.getFullYear();
       const month = String(now.getMonth() + 1).padStart(2, "0");
       const day = String(now.getDate()).padStart(2, "0");
+      const dateString = `${year}-${month}-${day}`;
 
-      // Get count of admissions created today (between start and end of day)
-      const startOfDay = new Date(
-        year,
-        now.getMonth(),
-        now.getDate(),
-        0,
-        0,
-        0,
-        0
-      );
-      const endOfDay = new Date(
-        year,
-        now.getMonth(),
-        now.getDate() + 1,
-        0,
-        0,
-        0,
-        0
-      );
+      // Use atomic counter to prevent race conditions
+      const sequence = await getNextSequence("admission", dateString);
+      const paddedSequence = String(sequence).padStart(4, "0");
 
-      const AdmissionModel = this.constructor as Model<IAdmission>;
-      const count = await AdmissionModel.countDocuments({
-        createdAt: { $gte: startOfDay, $lt: endOfDay },
-      });
-
-      const sequence = String(count + 1).padStart(4, "0");
-      this.studentId = `ADM-${year}-${month}${day}-${sequence}`;
+      this.studentId = `ADM-${year}-${month}${day}-${paddedSequence}`;
     }
     next();
   } catch (err) {

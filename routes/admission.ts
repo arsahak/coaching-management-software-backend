@@ -5,6 +5,7 @@ import {
     getAdmissionById,
     getAdmissionStats,
     getAdmissions,
+    getBatchList,
     getClassList,
     updateAdmission,
 } from "../controller/admissionController";
@@ -20,6 +21,7 @@ router.post("/", createAdmission);
 router.get("/", getAdmissions);
 router.get("/stats", getAdmissionStats);
 router.get("/classes", getClassList);
+router.get("/batches", getBatchList);
 router.get("/:id", getAdmissionById);
 router.put("/:id", updateAdmission);
 router.patch("/:id", updateAdmission);

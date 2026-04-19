@@ -1,6 +1,14 @@
 import { Request, Response } from "express";
 import { AuthRequest } from "../middleware/auth";
 import Admission, { IAdmission } from "../modal/admission";
+import {
+  validatePhoneNumber,
+  sanitizeString,
+  sanitizeStringArray,
+  isPositiveNumber,
+  isValidPastDate,
+} from "../utils/validation";
+import { logger } from "../utils/logger";
 
 // Create new admission
 export const createAdmission = async (
@@ -28,7 +36,7 @@ export const createAdmission = async (
       alarmMobile,
     } = req.body;
 
-    // Validation
+    // Validation - Required fields
     if (
       !studentName ||
       !fatherName ||
@@ -49,42 +57,103 @@ export const createAdmission = async (
       return;
     }
 
-    // Normalize payload
-    const normalizedSubjects = Array.isArray(subjects)
-      ? subjects
-      : subjects
-      ? [subjects]
-      : [];
+    // Phone number validation
+    if (!validatePhoneNumber(fatherMobile)) {
+      res.status(400).json({
+        success: false,
+        message: "Invalid father's mobile number. Format: 01XXXXXXXXX",
+      });
+      return;
+    }
 
-    const normalizedAlarmMobile =
-      alarmMobile == null
-        ? []
-        : Array.isArray(alarmMobile)
+    if (motherMobile && !validatePhoneNumber(motherMobile)) {
+      res.status(400).json({
+        success: false,
+        message: "Invalid mother's mobile number. Format: 01XXXXXXXXX",
+      });
+      return;
+    }
+
+    if (studentMobile && !validatePhoneNumber(studentMobile)) {
+      res.status(400).json({
+        success: false,
+        message: "Invalid student's mobile number. Format: 01XXXXXXXXX",
+      });
+      return;
+    }
+
+    // Monthly fee validation
+    if (!isPositiveNumber(monthlyFee)) {
+      res.status(400).json({
+        success: false,
+        message: "Monthly fee must be a positive number",
+      });
+      return;
+    }
+
+    // Date validation
+    if (!isValidPastDate(admissionDate)) {
+      res.status(400).json({
+        success: false,
+        message: "Admission date cannot be in the future",
+      });
+      return;
+    }
+
+    // Normalize and sanitize payload
+    const normalizedSubjects = sanitizeStringArray(
+      Array.isArray(subjects) ? subjects : subjects ? [subjects] : []
+    );
+
+    if (normalizedSubjects.length === 0) {
+      res.status(400).json({
+        success: false,
+        message: "At least one subject is required",
+      });
+      return;
+    }
+
+    const normalizedAlarmMobile: string[] = [];
+    if (alarmMobile) {
+      const alarmArray = Array.isArray(alarmMobile)
         ? alarmMobile
         : [alarmMobile];
+      for (const phone of alarmArray) {
+        if (validatePhoneNumber(phone)) {
+          normalizedAlarmMobile.push(phone.trim());
+        }
+      }
+    }
 
-    // Create admission
-    const admission = await Admission.create({
-      studentName,
-      fatherName,
-      motherName,
-      schoolName,
-      fatherMobile,
-      motherMobile,
-      studentMobile,
-      class: studentClass,
+    // Sanitize string inputs
+    const sanitizedData = {
+      studentName: sanitizeString(studentName),
+      fatherName: sanitizeString(fatherName),
+      motherName: sanitizeString(motherName),
+      schoolName: sanitizeString(schoolName),
+      fatherMobile: fatherMobile.trim(),
+      motherMobile: motherMobile?.trim(),
+      studentMobile: studentMobile?.trim(),
+      class: sanitizeString(studentClass),
       subjects: normalizedSubjects,
-      batchName,
-      batchTime,
+      batchName: sanitizeString(batchName),
+      batchTime: sanitizeString(batchTime),
       admissionDate: new Date(admissionDate),
       monthlyFee: Number(monthlyFee),
       studentSignature,
       directorSignature,
-      notes,
+      notes: notes ? sanitizeString(notes) : undefined,
       alarmMobile: normalizedAlarmMobile,
       createdBy: req.user?.userId,
-      status: "active",
-    });
+      status: "active" as const,
+    };
+
+    // Create admission
+    const admission = await Admission.create(sanitizedData);
+
+    logger.info(
+      `Admission created: ${admission.studentId} by user ${req.user?.userId}`
+    );
 
     res.status(201).json({
       success: true,
@@ -92,11 +161,13 @@ export const createAdmission = async (
       data: admission,
     });
   } catch (error) {
-    console.error("Create admission error:", error);
+    logger.error("Create admission error:", error);
     res.status(500).json({
       success: false,
       message: "Error creating admission",
-      error: error instanceof Error ? error.message : "Unknown error",
+      ...(process.env.NODE_ENV === "development" && {
+        error: error instanceof Error ? error.message : "Unknown error",
+      }),
     });
   }
 };
@@ -173,11 +244,13 @@ export const getAdmissions = async (
       },
     });
   } catch (error) {
-    console.error("Get admissions error:", error);
+    logger.error("Get admissions error:", error);
     res.status(500).json({
       success: false,
       message: "Error fetching admissions",
-      error: error instanceof Error ? error.message : "Unknown error",
+      ...(process.env.NODE_ENV === "development" && {
+        error: error instanceof Error ? error.message : "Unknown error",
+      }),
     });
   }
 };
@@ -207,11 +280,13 @@ export const getAdmissionById = async (
       data: admission,
     });
   } catch (error) {
-    console.error("Get admission by ID error:", error);
+    logger.error("Get admission by ID error:", error);
     res.status(500).json({
       success: false,
       message: "Error fetching admission",
-      error: error instanceof Error ? error.message : "Unknown error",
+      ...(process.env.NODE_ENV === "development" && {
+        error: error instanceof Error ? error.message : "Unknown error",
+      }),
     });
   }
 };
@@ -227,6 +302,40 @@ export const updateAdmission = async (
       ...req.body,
     };
 
+    // Validate phone numbers if provided
+    if (updateData.fatherMobile && !validatePhoneNumber(updateData.fatherMobile as string)) {
+      res.status(400).json({
+        success: false,
+        message: "Invalid father's mobile number. Format: 01XXXXXXXXX",
+      });
+      return;
+    }
+
+    if (updateData.motherMobile && !validatePhoneNumber(updateData.motherMobile as string)) {
+      res.status(400).json({
+        success: false,
+        message: "Invalid mother's mobile number. Format: 01XXXXXXXXX",
+      });
+      return;
+    }
+
+    if (updateData.studentMobile && !validatePhoneNumber(updateData.studentMobile as string)) {
+      res.status(400).json({
+        success: false,
+        message: "Invalid student's mobile number. Format: 01XXXXXXXXX",
+      });
+      return;
+    }
+
+    // Validate monthly fee if provided
+    if (updateData.monthlyFee !== undefined && !isPositiveNumber(updateData.monthlyFee)) {
+      res.status(400).json({
+        success: false,
+        message: "Monthly fee must be a positive number",
+      });
+      return;
+    }
+
     // Add updatedBy (string will be cast to ObjectId by Mongoose)
     if (req.user?.userId) {
       updateData.updatedBy = req.user.userId;
@@ -237,22 +346,57 @@ export const updateAdmission = async (
       updateData.admissionDate = new Date(updateData.admissionDate);
     }
 
-    // Normalize subjects to array
+    // Sanitize and normalize subjects to array
     if (updateData.subjects) {
-      if (!Array.isArray(updateData.subjects)) {
-        updateData.subjects = [updateData.subjects as string];
-      }
+      const subjectsArray = Array.isArray(updateData.subjects)
+        ? updateData.subjects
+        : [updateData.subjects as string];
+      updateData.subjects = sanitizeStringArray(subjectsArray);
     }
 
-    // Normalize alarmMobile / smsHistory / emailHistory to arrays if provided
-    if (updateData.alarmMobile && !Array.isArray(updateData.alarmMobile)) {
-      updateData.alarmMobile = [updateData.alarmMobile as string];
+    // Normalize alarmMobile and validate phone numbers
+    if (updateData.alarmMobile) {
+      const alarmArray = Array.isArray(updateData.alarmMobile)
+        ? updateData.alarmMobile
+        : [updateData.alarmMobile as string];
+      const validPhones: string[] = [];
+      for (const phone of alarmArray) {
+        if (validatePhoneNumber(phone as string)) {
+          validPhones.push((phone as string).trim());
+        }
+      }
+      updateData.alarmMobile = validPhones;
     }
+
+    // Normalize smsHistory / emailHistory to arrays if provided
     if (updateData.smsHistory && !Array.isArray(updateData.smsHistory)) {
       updateData.smsHistory = [updateData.smsHistory as string];
     }
     if (updateData.emailHistory && !Array.isArray(updateData.emailHistory)) {
       updateData.emailHistory = [updateData.emailHistory as string];
+    }
+
+    // Sanitize string fields
+    if (updateData.studentName) {
+      updateData.studentName = sanitizeString(updateData.studentName as string);
+    }
+    if (updateData.fatherName) {
+      updateData.fatherName = sanitizeString(updateData.fatherName as string);
+    }
+    if (updateData.motherName) {
+      updateData.motherName = sanitizeString(updateData.motherName as string);
+    }
+    if (updateData.schoolName) {
+      updateData.schoolName = sanitizeString(updateData.schoolName as string);
+    }
+    if (updateData.batchName) {
+      updateData.batchName = sanitizeString(updateData.batchName as string);
+    }
+    if (updateData.batchTime) {
+      updateData.batchTime = sanitizeString(updateData.batchTime as string);
+    }
+    if (updateData.notes) {
+      updateData.notes = sanitizeString(updateData.notes as string);
     }
 
     // Strip out fields that must never be updated
@@ -278,17 +422,23 @@ export const updateAdmission = async (
       return;
     }
 
+    logger.info(
+      `Admission updated: ${admission.studentId} by user ${req.user?.userId}`
+    );
+
     res.status(200).json({
       success: true,
       message: "Admission updated successfully",
       data: admission,
     });
   } catch (error) {
-    console.error("Update admission error:", error);
+    logger.error("Update admission error:", error);
     res.status(500).json({
       success: false,
       message: "Error updating admission",
-      error: error instanceof Error ? error.message : "Unknown error",
+      ...(process.env.NODE_ENV === "development" && {
+        error: error instanceof Error ? error.message : "Unknown error",
+      }),
     });
   }
 };
@@ -316,11 +466,13 @@ export const deleteAdmission = async (
       message: "Admission deleted successfully",
     });
   } catch (error) {
-    console.error("Delete admission error:", error);
+    logger.error("Delete admission error:", error);
     res.status(500).json({
       success: false,
       message: "Error deleting admission",
-      error: error instanceof Error ? error.message : "Unknown error",
+      ...(process.env.NODE_ENV === "development" && {
+        error: error instanceof Error ? error.message : "Unknown error",
+      }),
     });
   }
 };
@@ -369,11 +521,13 @@ export const getAdmissionStats = async (
       },
     });
   } catch (error) {
-    console.error("Get admission stats error:", error);
+    logger.error("Get admission stats error:", error);
     res.status(500).json({
       success: false,
       message: "Error fetching admission statistics",
-      error: error instanceof Error ? error.message : "Unknown error",
+      ...(process.env.NODE_ENV === "development" && {
+        error: error instanceof Error ? error.message : "Unknown error",
+      }),
     });
   }
 };
@@ -403,11 +557,40 @@ export const getClassList = async (
       data: sortedClasses,
     });
   } catch (error) {
-    console.error("Get class list error:", error);
+    logger.error("Get class list error:", error);
     res.status(500).json({
       success: false,
       message: "Error fetching class list",
-      error: error instanceof Error ? error.message : "Unknown error",
+      ...(process.env.NODE_ENV === "development" && {
+        error: error instanceof Error ? error.message : "Unknown error",
+      }),
+    });
+  }
+};
+
+// Get unique batch list
+export const getBatchList = async (
+  _req: Request,
+  res: Response
+): Promise<void> => {
+  try {
+    const batches = await Admission.distinct("batchName");
+
+    // Sort batches alphabetically
+    const sortedBatches = batches.sort((a, b) => a.localeCompare(b));
+
+    res.status(200).json({
+      success: true,
+      data: sortedBatches,
+    });
+  } catch (error) {
+    logger.error("Get batch list error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error fetching batch list",
+      ...(process.env.NODE_ENV === "development" && {
+        error: error instanceof Error ? error.message : "Unknown error",
+      }),
     });
   }
 };
