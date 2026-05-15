@@ -11,6 +11,7 @@ import authRoutes from "./routes/auth";
 import dashboardRoutes from "./routes/dashboard";
 import examRoutes from "./routes/exam";
 import feeRoutes from "./routes/fee";
+import inquiryRoutes from "./routes/inquiry";
 import notificationRoutes from "./routes/notification";
 import portfolioRoutes from "./routes/portfolio";
 import qrcodeRoutes from "./routes/qrcode";
@@ -70,6 +71,9 @@ app.use("/api/dashboard", dashboardRoutes);
 // Admission routes
 app.use("/api/admission", admissionRoutes);
 
+// Website admission inquiry routes (public form + dashboard)
+app.use("/api/inquiry", inquiryRoutes);
+
 // Attendance routes
 app.use("/api/attendance", attendanceRoutes);
 
@@ -111,6 +115,7 @@ const startServer = async (): Promise<void> => {
       console.log(`🌐 Environment: ${process.env.NODE_ENV || "development"}`);
       console.log(`🔗 Server URL: http://localhost:${PORT}`);
       console.log(`📡 API Health: http://localhost:${PORT}/api/health`);
+      console.log(`📝 Inquiry API: http://localhost:${PORT}/api/inquiry`);
       console.log(`⏰ Started At: ${new Date().toLocaleString()}`);
       console.log("========================================\n");
     });

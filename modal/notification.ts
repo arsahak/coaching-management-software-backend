@@ -2,6 +2,7 @@ import mongoose, { Document, Schema } from "mongoose";
 
 export type NotificationType =
   | "admission"
+  | "inquiry"
   | "attendance"
   | "exam"
   | "fee_paid"
@@ -35,6 +36,7 @@ const notificationSchema = new Schema<INotification>(
       required: true,
       enum: [
         "admission",
+        "inquiry",
         "attendance",
         "exam",
         "fee_paid",
