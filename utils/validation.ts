@@ -1,5 +1,3 @@
-import validator from "validator";
-
 /**
  * Validates Bangladesh phone number format
  * Format: 01XXXXXXXXX (11 digits)
@@ -10,12 +8,26 @@ export const validatePhoneNumber = (phone: string): boolean => {
   return /^01[0-9]{9}$/.test(cleanPhone);
 };
 
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/i;
+
+/** Escape HTML special characters (XSS mitigation) */
+export function escapeHtml(input: string): string {
+  if (!input) return "";
+  return input
+    .trim()
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#x27;");
+}
+
 /**
  * Sanitizes string input to prevent XSS attacks
  */
 export const sanitizeString = (input: string): string => {
   if (!input) return "";
-  return validator.escape(input.trim());
+  return escapeHtml(input);
 };
 
 /**
@@ -31,13 +43,13 @@ export const sanitizeStringArray = (inputs: string[]): string[] => {
  */
 export const validateEmail = (email: string): boolean => {
   if (!email) return false;
-  return validator.isEmail(email);
+  return EMAIL_REGEX.test(email.trim());
 };
 
 /**
  * Validates if a number is positive
  */
-export const isPositiveNumber = (num: any): boolean => {
+export const isPositiveNumber = (num: unknown): boolean => {
   const parsed = Number(num);
   return !isNaN(parsed) && parsed > 0;
 };
