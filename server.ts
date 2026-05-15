@@ -11,9 +11,11 @@ import authRoutes from "./routes/auth";
 import dashboardRoutes from "./routes/dashboard";
 import examRoutes from "./routes/exam";
 import feeRoutes from "./routes/fee";
+import notificationRoutes from "./routes/notification";
 import portfolioRoutes from "./routes/portfolio";
 import qrcodeRoutes from "./routes/qrcode";
 import smsRoutes from "./routes/sms";
+import smsSettingsRoutes from "./routes/smsSettings";
 import userRoutes from "./routes/users";
 
 // Load environment variables
@@ -88,6 +90,12 @@ app.use("/api/portfolio", portfolioRoutes);
 
 // User management routes
 app.use("/api/users", userRoutes);
+
+// SMS Settings routes
+app.use("/api/sms-settings", smsSettingsRoutes);
+
+// Notification routes
+app.use("/api/notifications", notificationRoutes);
 
 // Start server
 const startServer = async (): Promise<void> => {

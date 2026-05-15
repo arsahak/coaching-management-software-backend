@@ -9,6 +9,7 @@ import {
   isValidPastDate,
 } from "../utils/validation";
 import { logger } from "../utils/logger";
+import { triggerAdmissionSMS } from "../utils/autoSMS";
 
 // Create new admission
 export const createAdmission = async (
@@ -155,6 +156,11 @@ export const createAdmission = async (
       `Admission created: ${admission.studentId} by user ${req.user?.userId}`
     );
 
+    // Fire auto-SMS + notification (non-blocking)
+    triggerAdmissionSMS(admission).catch((e) =>
+      logger.error("triggerAdmissionSMS failed:", e)
+    );
+
     res.status(201).json({
       success: true,
       message: "Admission created successfully",
@@ -197,6 +203,8 @@ export const getAdmissions = async (
         { motherName: regex },
         { schoolName: regex },
         { studentId: regex },
+        { batchName: regex },
+        { class: regex },
         { fatherMobile: regex },
         { motherMobile: regex },
         { studentMobile: regex },
@@ -568,16 +576,32 @@ export const getClassList = async (
   }
 };
 
-// Get unique batch list
+// Get unique batch list (optional ?class= to restrict to admissions in that class)
 export const getBatchList = async (
-  _req: Request,
+  req: Request,
   res: Response
 ): Promise<void> => {
   try {
-    const batches = await Admission.distinct("batchName");
+    const rawClass = req.query.class as string | undefined;
+    const cls =
+      typeof rawClass === "string" && rawClass.trim().length > 0
+        ? rawClass.trim()
+        : undefined;
+
+    const filter: Record<string, unknown> = {
+      batchName: { $nin: [null, ""] },
+    };
+    if (cls) {
+      filter.class = cls;
+      filter.status = "active";
+    }
+
+    const batches = await Admission.distinct("batchName", filter);
 
     // Sort batches alphabetically
-    const sortedBatches = batches.sort((a, b) => a.localeCompare(b));
+    const sortedBatches = (batches as string[])
+      .filter((b) => typeof b === "string" && b.trim().length > 0)
+      .sort((a, b) => a.localeCompare(b));
 
     res.status(200).json({
       success: true,

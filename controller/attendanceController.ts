@@ -2,22 +2,8 @@ import { Request, Response } from "express";
 import Admission from "../modal/admission";
 import Attendance from "../modal/attendance";
 import { AuthRequest } from "../middleware/auth";
-
-// Helper function to send SMS (placeholder - integrate with your SMS service)
-async function sendSMS(
-  mobileNumbers: string[],
-  message: string
-): Promise<{ success: boolean; sentTo: string[] }> {
-  // TODO: Integrate with your SMS service provider
-  // For now, this is a placeholder
-  console.log(`Sending SMS to ${mobileNumbers.join(", ")}: ${message}`);
-  
-  // Simulate SMS sending
-  return {
-    success: true,
-    sentTo: mobileNumbers,
-  };
-}
+import { triggerAttendanceSMS } from "../utils/autoSMS";
+import { sendSMS } from "../utils/smsService";
 
 // Mark attendance for a single student
 export const markAttendance = async (
@@ -73,20 +59,6 @@ export const markAttendance = async (
       existingAttendance.status = status;
       existingAttendance.notes = notes;
       existingAttendance.markedBy = userId as any;
-      
-      // If status changed to absent and SMS not sent, send SMS
-      if (status === "absent" && !existingAttendance.smsSent && admission.alarmMobile && admission.alarmMobile.length > 0) {
-        const message = `${admission.studentName} (${admission.studentId || "N/A"}) অনুপস্থিত - তারিখ: ${attendanceDate.toLocaleDateString("bn-BD")}`;
-        const smsResult = await sendSMS(admission.alarmMobile, message);
-        if (smsResult.success) {
-          existingAttendance.smsSent = true;
-          existingAttendance.smsSentAt = new Date();
-          existingAttendance.smsRecipients = smsResult.sentTo;
-          smsSent = true;
-          smsRecipients = smsResult.sentTo;
-        }
-      }
-      
       attendance = await existingAttendance.save();
     } else {
       // Create new attendance
@@ -99,21 +71,12 @@ export const markAttendance = async (
         notes,
         markedBy: userId,
       });
-
-      // If absent, send SMS to parents
-      if (status === "absent" && admission.alarmMobile && admission.alarmMobile.length > 0) {
-        const message = `${admission.studentName} (${admission.studentId || "N/A"}) অনুপস্থিত - তারিখ: ${attendanceDate.toLocaleDateString("bn-BD")}`;
-        const smsResult = await sendSMS(admission.alarmMobile, message);
-        if (smsResult.success) {
-          attendance.smsSent = true;
-          attendance.smsSentAt = new Date();
-          attendance.smsRecipients = smsResult.sentTo;
-          await attendance.save();
-          smsSent = true;
-          smsRecipients = smsResult.sentTo;
-        }
-      }
     }
+
+    // Fire auto-SMS + notification via settings (non-blocking)
+    triggerAttendanceSMS(status as "present" | "absent", attendance, admission).catch(
+      (e) => console.error("triggerAttendanceSMS failed:", e)
+    );
 
     res.status(200).json({
       success: true,
@@ -198,9 +161,9 @@ export const markBatchAttendance = async (
             if (smsResult.success) {
               existingAttendance.smsSent = true;
               existingAttendance.smsSentAt = new Date();
-              existingAttendance.smsRecipients = smsResult.sentTo;
+              existingAttendance.smsRecipients = smsResult.sentTo ?? [];
               smsSent = true;
-              smsRecipients = smsResult.sentTo;
+              smsRecipients = smsResult.sentTo ?? [];
             }
           }
 
@@ -222,10 +185,10 @@ export const markBatchAttendance = async (
             if (smsResult.success) {
               attendance.smsSent = true;
               attendance.smsSentAt = new Date();
-              attendance.smsRecipients = smsResult.sentTo;
+              attendance.smsRecipients = smsResult.sentTo ?? [];
               await attendance.save();
               smsSent = true;
-              smsRecipients = smsResult.sentTo;
+              smsRecipients = smsResult.sentTo ?? [];
             }
           }
         }

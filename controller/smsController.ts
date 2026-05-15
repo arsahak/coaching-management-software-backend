@@ -371,7 +371,7 @@ export const sendSMSToStudents = async (
       return;
     }
 
-    // Collect mobile numbers
+    // Collect mobile numbers — gather all available numbers per admission
     const mobileNumbers: string[] = [];
     const recipients: Array<{
       mobileNumber: string;
@@ -380,13 +380,26 @@ export const sendSMSToStudents = async (
       admissionId: string;
     }> = [];
 
+    const seenNumbers = new Set<string>();
+
     admissions.forEach((admission) => {
-      // Try father's mobile first, then mother's
-      const mobileNumber = admission.fatherMobile || admission.motherMobile;
-      if (mobileNumber && mobileNumber.trim()) {
-        mobileNumbers.push(mobileNumber);
+      // Collect every non-empty number from the admission record
+      const candidateNumbers: string[] = [
+        admission.fatherMobile,
+        admission.motherMobile,
+        admission.studentMobile,
+        ...(Array.isArray(admission.alarmMobile) ? admission.alarmMobile : []),
+      ].filter((n): n is string => typeof n === "string" && n.trim() !== "");
+
+      for (const raw of candidateNumbers) {
+        const num = raw.trim();
+        // Skip duplicates across all admissions
+        if (seenNumbers.has(num)) continue;
+        seenNumbers.add(num);
+
+        mobileNumbers.push(num);
         recipients.push({
-          mobileNumber,
+          mobileNumber: num,
           name: admission.studentName,
           studentId: admission.studentId,
           admissionId: admission._id.toString(),
@@ -397,7 +410,8 @@ export const sendSMSToStudents = async (
     if (mobileNumbers.length === 0) {
       res.status(400).json({
         success: false,
-        message: "No mobile numbers found for the selected students",
+        message:
+          "No mobile numbers found for the selected students. Please make sure the admissions have valid phone numbers.",
       });
       return;
     }

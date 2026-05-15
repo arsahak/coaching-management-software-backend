@@ -1,5 +1,5 @@
 {
-  "watch": ["src", "config", "routes", "controller", "modal"],
+  "watch": ["src", "config", "routes", "controller", "modal", "utils"],
   "ext": "ts,json",
   "ignore": ["src/**/*.spec.ts", "node_modules"],
   "exec": "ts-node server.ts",

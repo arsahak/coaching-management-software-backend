@@ -1,22 +1,10 @@
 import { Request, Response } from "express";
 import Admission from "../modal/admission";
 import Fee from "../modal/fee";
+import Notification from "../modal/notification";
 import { AuthRequest } from "../middleware/auth";
-
-// Helper function to send SMS (placeholder - integrate with your SMS service)
-async function sendSMS(
-  mobileNumbers: string[],
-  message: string
-): Promise<{ success: boolean; sentTo: string[] }> {
-  // TODO: Integrate with your SMS service provider
-  console.log(`Sending SMS to ${mobileNumbers.join(", ")}: ${message}`);
-  
-  // Simulate SMS sending
-  return {
-    success: true,
-    sentTo: mobileNumbers,
-  };
-}
+import { triggerFeePaymentSMS } from "../utils/autoSMS";
+import { sendSMS } from "../utils/smsService";
 
 // Create fee record
 export const createFee = async (
@@ -226,7 +214,6 @@ export const updateFee = async (
       paymentMethod,
       transactionId,
       notes,
-      sendSms,
     } = req.body;
 
     const fee = await Fee.findById(id).populate("admissionId");
@@ -261,28 +248,17 @@ export const updateFee = async (
     // Status will be updated automatically by pre-save hook
     await fee.save();
 
-    // Send payment confirmation SMS if requested and not already sent
-    let paymentSmsSent = false;
-    if (sendSms && fee.status === "paid" && !fee.paymentSmsSent && admission.alarmMobile && admission.alarmMobile.length > 0) {
-      const paymentDateStr = fee.paymentDate
-        ? new Date(fee.paymentDate).toLocaleDateString("bn-BD")
-        : new Date().toLocaleDateString("bn-BD");
-      const message = `${admission.studentName} (${admission.studentId || "N/A"}) - মাসিক ফি পরিশোধ করা হয়েছে\nপরিমাণ: ৳${fee.amountPaid}\nতারিখ: ${paymentDateStr}`;
-      
-      const smsResult = await sendSMS(admission.alarmMobile, message);
-      if (smsResult.success) {
-        fee.paymentSmsSent = true;
-        fee.paymentSmsSentAt = new Date();
-        await fee.save();
-        paymentSmsSent = true;
-      }
+    // Auto-trigger payment confirmation SMS + notification (non-blocking)
+    if (fee.status === "paid") {
+      triggerFeePaymentSMS(fee as any, admission).catch((e) =>
+        console.error("triggerFeePaymentSMS failed:", e)
+      );
     }
 
     res.status(200).json({
       success: true,
       message: "Fee updated successfully",
       data: fee,
-      paymentSmsSent,
     });
   } catch (error) {
     console.error("Update fee error:", error);
@@ -379,19 +355,20 @@ export const sendPaymentReminderSMS = async (
       fee.reminderSmsSentAt = new Date();
       await fee.save();
 
+      Notification.create({
+        type: "fee_reminder",
+        title: `Fee Reminder Sent — ${admission.studentName}`,
+        message: `Reminder SMS sent to ${smsResult.sentTo?.length ?? 0} number(s) for ${admission.studentName}.`,
+        meta: { admissionId: String(admission._id), relatedId: String(fee._id), studentName: admission.studentName, studentId: admission.studentId, smsSent: true, smsNumbers: smsResult.sentTo ?? [] },
+      }).catch(() => {});
+
       res.status(200).json({
         success: true,
         message: "Payment reminder SMS sent successfully",
-        data: {
-          sentTo: smsResult.sentTo,
-          fee,
-        },
+        data: { sentTo: smsResult.sentTo, fee },
       });
     } else {
-      res.status(500).json({
-        success: false,
-        message: "Failed to send SMS",
-      });
+      res.status(500).json({ success: false, message: "Failed to send SMS" });
     }
   } catch (error) {
     console.error("Send payment reminder SMS error:", error);
@@ -462,6 +439,13 @@ export const sendOverdueSMS = async (
       fee.overdueSmsSent = true;
       fee.overdueSmsSentAt = new Date();
       await fee.save();
+
+      Notification.create({
+        type: "fee_overdue",
+        title: `Overdue Alert Sent — ${admission.studentName}`,
+        message: `Overdue SMS sent to ${smsResult.sentTo?.length ?? 0} number(s) for ${admission.studentName} (৳${fee.amountDue}).`,
+        meta: { admissionId: String(admission._id), relatedId: String(fee._id), studentName: admission.studentName, studentId: admission.studentId, smsSent: true, smsNumbers: smsResult.sentTo ?? [] },
+      }).catch(() => {});
 
       res.status(200).json({
         success: true,

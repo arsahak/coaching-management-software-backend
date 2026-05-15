@@ -1,6 +1,16 @@
-const SMS_API_URL = "http://bulksmsbd.net/api/smsapi";
-const DEFAULT_API_KEY = "hS41YUabAzeqc9dnpk9f";
-const DEFAULT_SENDER_ID = "Random";
+// Read env vars lazily (inside functions) so dotenv.config() in server.ts
+// has time to run before these values are consumed.
+function getSmsConfig() {
+  const base =
+    process.env.BLUKSMS_API_URL || "http://bulksmsbd.net/api/smsapi";
+  return {
+    apiUrl: base,
+    // Many-SMS uses a different endpoint: smsapimany
+    apiUrlMany: base.replace(/\/smsapi$/, "/smsapimany"),
+    apiKey: process.env.BLUKSMS_API_KEY || "",
+    senderId: process.env.BLUKSMS_API_SENDER || "8809617634353",
+  };
+}
 
 export interface SMSResponse {
   success: boolean;
@@ -35,9 +45,13 @@ function formatPhoneNumber(num: string): string {
 export async function sendSMS(
   mobileNumbers: string | string[],
   message: string,
-  senderId: string = DEFAULT_SENDER_ID,
-  apiKey: string = DEFAULT_API_KEY
+  senderId?: string,
+  apiKey?: string
 ): Promise<SMSResponse> {
+  const cfg = getSmsConfig();
+  const resolvedApiKey = apiKey || cfg.apiKey;
+  const resolvedSenderId = senderId || cfg.senderId;
+
   try {
     // Convert single number to array
     const numbers = Array.isArray(mobileNumbers)
@@ -47,20 +61,21 @@ export async function sendSMS(
     // Format numbers (ensure they start with 880 for Bangladesh)
     const formattedNumbers = numbers.map(formatPhoneNumber);
 
-    // Join numbers with comma for bulk SMS
-    const numberString = formattedNumbers.join(",");
-
-    // URL encode the message
-    const encodedMessage = encodeURIComponent(message);
-
-    // Build API URL
-    const apiUrl = `${SMS_API_URL}?api_key=${apiKey}&type=text&number=${numberString}&senderid=${senderId}&message=${encodedMessage}`;
-
-    // Send SMS using fetch
-    const response = await fetch(apiUrl);
+    // POST to smsapi with JSON body
+    const response = await fetch(cfg.apiUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        api_key: resolvedApiKey,
+        senderid: resolvedSenderId,
+        number: formattedNumbers.join(","),
+        message,
+      }),
+    });
 
     // Get response text
     const responseText = await response.text();
+    console.log("[SMS] Raw API response:", responseText);
 
     // Try to parse as JSON first
     let responseData: any;
@@ -71,12 +86,41 @@ export async function sendSMS(
       responseData = responseText;
     }
 
-    // Handle different response formats
+    // BulkSMS BD returns: { response_code: 202, success: "success", message: "..." }
+    // or on error:        { response_code: 1005, success: "error",   message: "..." }
+    if (typeof responseData === "object" && responseData !== null) {
+      const resCode =
+        responseData.response_code ??
+        responseData.code ??
+        responseData.error_code;
+
+      const isSuccess =
+        resCode === 202 ||
+        responseData.success === "success" ||
+        responseData.status === "success";
+
+      if (isSuccess) {
+        return {
+          success: true,
+          code: 202,
+          message: responseData.message || "SMS Submitted Successfully",
+          sentTo: formattedNumbers,
+        };
+      }
+
+      return {
+        success: false,
+        code: resCode,
+        message:
+          responseData.message || getErrorMessage(resCode),
+      };
+    }
+
+    // Plain-text fallback
     if (typeof responseData === "string") {
-      // If response is a string, check for success indicators
       if (
-        responseData.toLowerCase().includes("success") ||
-        responseData.includes("202")
+        responseData.includes("202") ||
+        responseData.toLowerCase().includes("success")
       ) {
         return {
           success: true,
@@ -85,8 +129,7 @@ export async function sendSMS(
           sentTo: formattedNumbers,
         };
       }
-      // Check for error codes in string
-      const errorMatch = responseData.match(/\d{4}/);
+      const errorMatch = responseData.match(/1\d{3}/);
       if (errorMatch) {
         const errorCode = parseInt(errorMatch[0]);
         return {
@@ -95,29 +138,9 @@ export async function sendSMS(
           message: getErrorMessage(errorCode),
         };
       }
-    } else if (typeof responseData === "object") {
-      // Response is already an object
-      if (responseData.status === "success" || responseData.code === 202) {
-        return {
-          success: true,
-          code: 202,
-          message: responseData.message || "SMS Submitted Successfully",
-          sentTo: formattedNumbers,
-        };
-      } else {
-        // Error response
-        const errorCode = responseData.code || responseData.error_code;
-        const errorMessage = getErrorMessage(errorCode);
-
-        return {
-          success: false,
-          code: errorCode,
-          message: errorMessage,
-        };
-      }
     }
 
-    // Default success if no error detected
+    // Default: assume success if we got a 200 HTTP response with no error indicator
     return {
       success: true,
       code: 202,
@@ -142,31 +165,30 @@ export async function sendSMS(
  */
 export async function sendBulkSMS(
   messages: Array<{ number: string; message: string }>,
-  senderId: string = DEFAULT_SENDER_ID,
-  apiKey: string = DEFAULT_API_KEY
+  senderId?: string,
+  apiKey?: string
 ): Promise<SMSResponse> {
+  const cfg = getSmsConfig();
+  const resolvedApiKey = apiKey || cfg.apiKey;
+  const resolvedSenderId = senderId || cfg.senderId;
+
   try {
-    // Format the messages according to Bulk SMS BD format
-    // Format: number1|message1,number2|message2,...
-    const formattedMessages = messages
-      .map((msg) => {
-        let cleaned = msg.number.replace(/[\s\-\(\)]/g, "");
-        if (!cleaned.startsWith("880")) {
-          if (cleaned.startsWith("0")) {
-            cleaned = cleaned.substring(1);
-          }
-          cleaned = `880${cleaned}`;
-        }
+    // Format messages for the smsapimany endpoint: [{to, message}]
+    const formattedMessages = messages.map((msg) => ({
+      to: formatPhoneNumber(msg.number),
+      message: msg.message,
+    }));
 
-        // URL encode the message
-        const encodedMessage = encodeURIComponent(msg.message);
-        return `${cleaned}|${encodedMessage}`;
-      })
-      .join(",");
-
-    const apiUrl = `${SMS_API_URL}?api_key=${apiKey}&type=text&senderid=${senderId}&messages=${formattedMessages}`;
-
-    const response = await fetch(apiUrl);
+    // POST to smsapimany with JSON body
+    const response = await fetch(cfg.apiUrlMany, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        api_key: resolvedApiKey,
+        senderid: resolvedSenderId,
+        messages: formattedMessages,
+      }),
+    });
     const responseText = await response.text();
 
     let responseData: any;
@@ -176,23 +198,31 @@ export async function sendBulkSMS(
       responseData = responseText;
     }
 
-    if (
-      typeof responseData === "object" &&
-      (responseData.status === "success" || responseData.code === 202)
-    ) {
-      return {
-        success: true,
-        code: 202,
-        message: "Bulk SMS Submitted Successfully",
-        sentTo: messages.map((msg) => msg.number),
-      };
+    if (typeof responseData === "object" && responseData !== null) {
+      const resCode =
+        responseData.response_code ??
+        responseData.code ??
+        responseData.error_code;
+
+      const isSuccess =
+        resCode === 202 ||
+        responseData.success === "success" ||
+        responseData.status === "success";
+
+      if (!isSuccess && resCode) {
+        return {
+          success: false,
+          code: resCode,
+          message: responseData.message || getErrorMessage(resCode),
+        };
+      }
     }
 
     return {
       success: true,
       code: 202,
       message: "Bulk SMS Submitted Successfully",
-      sentTo: messages.map((msg) => msg.number),
+      sentTo: formattedMessages.map((m) => m.to),
     };
   } catch (error) {
     console.error("Bulk SMS sending error:", error);
@@ -227,7 +257,7 @@ function getErrorMessage(code?: number): string {
     1020: "The parent of this account is not found",
     1021: "The parent active (sender type name) price of this account is not found",
     1031: "Your Account Not Verified, Please Contact Administrator",
-    1032: "IP Not whitelisted",
+    1032: "IP Not whitelisted — add your server IP in BulkSMS BD dashboard (API → IP Whitelist)",
   };
 
   return errorMessages[code || 1005] || "Unknown error occurred";

@@ -8,6 +8,7 @@ import {
   getExamResults,
   getExamStats,
   getExams,
+  sendExamAlertSMS,
   sendExamResultSMS,
   sendExamScheduleSMS,
   updateExam,
@@ -30,6 +31,9 @@ router.delete("/:id", deleteExam);
 
 // Exam schedule SMS
 router.post("/schedule/sms", sendExamScheduleSMS);
+
+// Custom alert SMS to all students of an exam's class/batch
+router.post("/:id/alert", sendExamAlertSMS);
 
 // Exam result routes
 router.post("/results", createExamResult);

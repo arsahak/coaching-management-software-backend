@@ -3,21 +3,8 @@ import Admission from "../modal/admission";
 import Exam, { ExamResult } from "../modal/exam";
 import type { IExamResult } from "../modal/exam";
 import { AuthRequest } from "../middleware/auth";
-
-// Helper function to send SMS (placeholder - integrate with your SMS service)
-async function sendSMS(
-  mobileNumbers: string[],
-  message: string
-): Promise<{ success: boolean; sentTo: string[] }> {
-  // TODO: Integrate with your SMS service provider
-  console.log(`Sending SMS to ${mobileNumbers.join(", ")}: ${message}`);
-  
-  // Simulate SMS sending
-  return {
-    success: true,
-    sentTo: mobileNumbers,
-  };
-}
+import { triggerExamAlertSMS, triggerExamResultSMS, triggerExamScheduledSMS } from "../utils/autoSMS";
+import { sendSMS } from "../utils/smsService";
 
 // Create exam
 export const createExam = async (
@@ -58,6 +45,11 @@ export const createExam = async (
       status: "scheduled",
       createdBy: req.user?.userId,
     });
+
+    // Fire auto-SMS to all students in the batch (non-blocking)
+    triggerExamScheduledSMS(exam).catch((e) =>
+      console.error("triggerExamScheduledSMS failed:", e)
+    );
 
     res.status(201).json({
       success: true,
@@ -423,7 +415,6 @@ export const createExamResult = async (
     });
 
     let result: IExamResult;
-    let absentSmsSent = false;
 
     if (existingResult) {
       // Update existing result
@@ -453,24 +444,23 @@ export const createExamResult = async (
       });
     }
 
-    // If absent, send SMS
-    if (!result.present && !result.absentSmsSent && admission.alarmMobile && admission.alarmMobile.length > 0) {
-      const examDateStr = new Date(exam.examDate).toLocaleDateString("bn-BD");
-      const message = `${admission.studentName} (${admission.studentId || "N/A"}) পরীক্ষায় অনুপস্থিত - ${exam.examName} - তারিখ: ${examDateStr}`;
-      const smsResult = await sendSMS(admission.alarmMobile, message);
-      if (smsResult.success) {
-        result.absentSmsSent = true;
-        result.absentSmsSentAt = new Date();
-        await result.save();
-        absentSmsSent = true;
-      }
-    }
+    // Auto-trigger exam result SMS + notification (non-blocking)
+    triggerExamResultSMS(
+      {
+        _id:        result._id,
+        subject:    exam.subject,
+        marks:      result.marks,
+        totalMarks: result.totalMarks,
+        grade:      result.grade,
+        examDate:   exam.examDate,
+      },
+      admission
+    ).catch((e) => console.error("triggerExamResultSMS failed:", e));
 
     res.status(200).json({
       success: true,
       message: "Exam result created/updated successfully",
       data: result,
-      absentSmsSent,
     });
   } catch (error) {
     console.error("Create exam result error:", error);
@@ -539,7 +529,6 @@ export const createBatchExamResults = async (
         });
 
         let result: IExamResult;
-        let absentSmsSent = false;
 
         if (existingResult) {
           existingResult.marks = Number(marks);
@@ -567,25 +556,20 @@ export const createBatchExamResults = async (
           });
         }
 
-        // If absent, send SMS
-        if (!result.present && !result.absentSmsSent && admission.alarmMobile && admission.alarmMobile.length > 0) {
-          const examDateStr = new Date(exam.examDate).toLocaleDateString("bn-BD");
-          const message = `${admission.studentName} (${admission.studentId || "N/A"}) পরীক্ষায় অনুপস্থিত - ${exam.examName} - তারিখ: ${examDateStr}`;
-          const smsResult = await sendSMS(admission.alarmMobile, message);
-          if (smsResult.success) {
-            result.absentSmsSent = true;
-            result.absentSmsSentAt = new Date();
-            await result.save();
-            absentSmsSent = true;
-          }
-        }
+        // Fire auto-SMS + notification via settings (non-blocking)
+        triggerExamResultSMS(
+          {
+            _id:        result._id,
+            subject:    exam.subject,
+            marks:      result.marks,
+            totalMarks: result.totalMarks,
+            grade:      result.grade,
+            examDate:   exam.examDate,
+          },
+          admission
+        ).catch((e) => console.error("triggerExamResultSMS failed:", e));
 
-        createdResults.push({
-          admissionId,
-          success: true,
-          result,
-          absentSmsSent,
-        });
+        createdResults.push({ admissionId, success: true, result });
       } catch (error) {
         errors.push({
           admissionId: resultData.admissionId,
@@ -829,3 +813,39 @@ export const getExamStats = async (
   }
 };
 
+// Send custom alert SMS to all students of an exam's class/batch
+export const sendExamAlertSMS = async (
+  req: AuthRequest,
+  res: Response
+): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const { message } = req.body;
+
+    if (!message || !message.trim()) {
+      res.status(400).json({ success: false, message: "Alert message is required" });
+      return;
+    }
+
+    const exam = await Exam.findById(id);
+    if (!exam) {
+      res.status(404).json({ success: false, message: "Exam not found" });
+      return;
+    }
+
+    const { sent, failed } = await triggerExamAlertSMS(exam as any, message.trim());
+
+    res.status(200).json({
+      success: true,
+      message: `Alert sent to ${sent} student(s)${failed > 0 ? `, failed for ${failed}` : ""}.`,
+      data: { sent, failed },
+    });
+  } catch (error) {
+    console.error("Send exam alert SMS error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Error sending exam alert",
+      error: error instanceof Error ? error.message : "Unknown error",
+    });
+  }
+};
