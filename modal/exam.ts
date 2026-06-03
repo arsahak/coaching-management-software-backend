@@ -155,7 +155,7 @@ const examResultSchema = new Schema<IExamResult>(
       type: Schema.Types.ObjectId,
       ref: "Exam",
       required: [true, "Exam ID is required"],
-      index: true,
+      // index covered by compound { examId:1, admissionId:1 } below
     },
     examName: {
       type: String,
@@ -165,12 +165,12 @@ const examResultSchema = new Schema<IExamResult>(
       type: Schema.Types.ObjectId,
       ref: "Admission",
       required: [true, "Admission ID is required"],
-      index: true,
+      // index defined via examResultSchema.index({ admissionId:1 }) below
     },
     studentId: {
       type: String,
       trim: true,
-      index: true,
+      // index defined via examResultSchema.index({ studentId:1 }) below
     },
     studentName: {
       type: String,

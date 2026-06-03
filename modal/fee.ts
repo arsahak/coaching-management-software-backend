@@ -50,12 +50,12 @@ const feeSchema = new Schema<IFee>(
       type: Schema.Types.ObjectId,
       ref: "Admission",
       required: [true, "Admission ID is required"],
-      index: true,
+      // index covered by compound { admissionId:1, month:1, year:1 } below
     },
     studentId: {
       type: String,
       trim: true,
-      index: true,
+      // index covered by compound { studentId:1, year:1, month:-1 } below
     },
     studentName: {
       type: String,

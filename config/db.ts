@@ -1,4 +1,10 @@
+import dns from "dns";
 import mongoose from "mongoose";
+
+// Windows' built-in DNS resolver often refuses TCP-fallback SRV queries that
+// MongoDB Atlas requires.  Force Google's public DNS (supports SRV over both
+// UDP and TCP) before any connection is attempted.
+dns.setServers(["8.8.8.8", "8.8.4.4", "1.1.1.1"]);
 
 const connectDB = async (): Promise<void> => {
   try {
@@ -10,6 +16,8 @@ const connectDB = async (): Promise<void> => {
 
     const conn = await mongoose.connect(mongoURI, {
       dbName: "somikoroncoaching_db",
+      serverSelectionTimeoutMS: 10000, // fail fast — 10 s instead of default 30 s
+      connectTimeoutMS: 10000,
     });
 
     console.log("========================================");
@@ -26,10 +34,25 @@ const connectDB = async (): Promise<void> => {
     console.log(`⏰ Connected At: ${new Date().toLocaleString()}`);
     console.log("========================================\n");
   } catch (error) {
+    const msg = error instanceof Error ? error.message : "Unknown error";
+
     console.error("========================================");
     console.error("❌ Database Connection Error:");
     console.error("========================================");
-    console.error(error instanceof Error ? error.message : "Unknown error");
+    console.error(msg);
+
+    // Give actionable guidance for the most common Atlas failures
+    if (msg.includes("querySrv") || msg.includes("ECONNREFUSED") || msg.includes("ENOTFOUND")) {
+      console.error("\n🔍 Likely causes:");
+      console.error("  1. Atlas cluster is PAUSED — log in to cloud.mongodb.com and resume it.");
+      console.error("  2. Your IP is not whitelisted — Atlas > Network Access > Add Current IP.");
+      console.error("  3. DNS/firewall blocking SRV lookups — try a different network.");
+    }
+
+    if (msg.includes("Authentication failed") || msg.includes("bad auth")) {
+      console.error("\n🔍 Likely cause: wrong DB username or password in MONGODB_URI.");
+    }
+
     console.error("========================================\n");
     process.exit(1);
   }

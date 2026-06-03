@@ -34,12 +34,12 @@ const attendanceSchema = new Schema<IAttendance>(
       type: Schema.Types.ObjectId,
       ref: "Admission",
       required: [true, "Admission ID is required"],
-      index: true,
+      // index covered by compound { admissionId:1, date:1 } below
     },
     studentId: {
       type: String,
       trim: true,
-      index: true,
+      // index covered by compound { studentId:1, date:-1 } below
     },
     studentName: {
       type: String,

@@ -54,26 +54,26 @@ const qrCodeSchema = new Schema<IQRCode>(
     studentId: {
       type: String,
       trim: true,
-      index: true,
+      // index covered by compound { studentId:1, isActive:1 } below
     },
     admissionId: {
       type: Schema.Types.ObjectId,
       ref: "Admission",
-      index: true,
+      // index covered by compound { admissionId:1, isActive:1 } below
     },
     examId: {
       type: Schema.Types.ObjectId,
       ref: "Exam",
-      index: true,
+      // index covered by compound { examId:1, isActive:1 } below
     },
     expiresAt: {
       type: Date,
-      index: true,
+      // index defined via qrCodeSchema.index({ expiresAt:1 }) below
     },
     isActive: {
       type: Boolean,
       default: true,
-      index: true,
+      // index covered by all isActive compounds below
     },
     metadata: {
       type: Schema.Types.Mixed,
